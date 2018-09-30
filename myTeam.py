@@ -25,7 +25,7 @@ from util import nearestPoint
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first = 'AlphaBetaAgent', second = 'DefensiveReflexAgent'):
+               first = 'InvadeAgent', second = 'DefensiveReflexAgent'):
   """
   This function should return a list of two agents that will form the
   team, initialized using firstIndex and secondIndex as their agent
@@ -53,6 +53,7 @@ class DummyAgent(CaptureAgent):
   You should look at baselineTeam.py for more details about how to
   create an agent as this is the bare minimum.
   """
+
 
   def registerInitialState(self, gameState):
     """
@@ -145,10 +146,6 @@ class DummyAgent(CaptureAgent):
     #     print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
     #     print(features)
     #     print('action', action)
-    if gameState.isRed(gameState.getAgentPosition(self.index)) and not gameState.isOnRedTeam(self.index):
-      print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
-      print(features)
-      print('action', action)
     return features * weights
 
   def getFeatures(self, gameState, action):
@@ -169,65 +166,154 @@ class DummyAgent(CaptureAgent):
     """
     return {'successorScore': 1.0}
 
-class MultiAgentSearchAgent(CaptureAgent):
-  """
-  This class provides some common elements to all of your
-  multi-agent searchers.  Any methods defined here will be available
-  to the MinimaxPacmanAgent, AlphaBetaPacmanAgent & ExpectimaxPacmanAgent.
+  def amIinEnemyRegion(self, gameState):
+    pos = gameState.getAgentPosition(self.index)
+    if gameState.isOnRedTeam(self.index) and not gameState.isRed(pos):
+      return True
+    elif gameState.isOnRedTeam(self.index) and gameState.isRed(pos):
+      return False
+    elif not gameState.isOnRedTeam(self.index) and gameState.isRed(pos):
+      return True
+    elif not gameState.isOnRedTeam(self.index) and not gameState.isRed(pos):
+      return False
 
-  You *do not* need to make any changes here, but you can if you want to
-  add functionality to all your adversarial search agents.  Please do not
-  remove anything, however.
+  def isThisGuyAGhost(self, gameState, index):
+    ghostList = []
+    if gameState.isOnRedTeam(self.index):
+      enemyList = gameState.getBlueTeamIndices()
+      for enemy in enemyList:
+        if not gameState.isRed(gameState.getAgentPosition(enemy)):
+          ghostList.append(enemy)
+    else:
+      enemyList = gameState.getRedTeamIndices()
+      for enemy in enemyList:
+        if gameState.isRed((gameState.getAgentPosition(enemy))):
+          ghostList.append(enemy)
 
-  Note: this is an abstract class: one that should not be instantiated.  It's
-  only partially specified, and designed to be extended.  Agent (game.py)
-  is another abstract class.
-  """
+    return index in ghostList
 
-  def evaluate(self, gameState):
-    """
-    Computes a linear combination of features and feature weights
-    """
-    features = self.getFeatures(gameState)
-    weights = self.getWeights(gameState)
 
-    # previousObservation = self.getPreviousObservation()
-    # if previousObservation:
-    #   if previousObservation.getAgentPosition(self.index) == gameState.getAgentPosition(self.index):
-    #     print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
-    #     print(features)
-    #     print('action', action)
-    #print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
-    #print(features)
-    # print('action', action)
-    # if gameState.isRed(gameState.getAgentPosition(self.index)) and not gameState.isOnRedTeam(self.index):
-    #   print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
-      # print(features)
-    # if not features * weights:
-    #   return -math.inf
-    return features * weights
+class InvadeAgent(DummyAgent):
 
-class AlphaBetaAgent(MultiAgentSearchAgent):
-  """
-  Your minimax agent with alpha-beta pruning (question 3)
-  """
+  def __init__(self, index, timeForComputing = .1):
+    # Agent index for querying state
+    self.index = index
+
+    # Whether or not you're on the red team
+    self.red = None
+
+    # Agent objects controlling you and your teammates
+    self.agentsOnTeam = None
+
+    # Maze distance calculator
+    self.distancer = None
+
+    # A history of observations
+    self.observationHistory = []
+
+    # Time to spend each turn on computing maze distances
+    self.timeForComputing = timeForComputing
+
+    # Access to the graphics
+    self.display = None
+    self.pastIsinEnemyRegion = True       # for initialization
+    self.currentIsinEnemyRegion = False
+    self.mode = "initial position"
+
+    self.yourTurnToRisk = 0
+
+
+  def chooseAction(self, gameState):
+    self.currentIsinEnemyRegion = self.amIinEnemyRegion(gameState)
+    if self.mode == "initial position":
+      if self.currentIsinEnemyRegion:
+        self.mode = "AlphaBeta Agent"
+        return self.chooseAction(gameState)
+      if self.pastIsinEnemyRegion == True and self.currentIsinEnemyRegion == False:
+        self.Agent = ChooseInvadePositionAgent(self.index)
+        self.Agent.registerInitialState(gameState)
+      action = self.Agent.getAction(gameState)
+      self.pastIsinEnemyRegion = self.currentIsinEnemyRegion
+
+      return action
+
+    if self.getFood(gameState).count() == 0:
+      self.Agent = goHomeAgent(self.index)
+      self.Agent.registerInitialState(gameState)
+      action = self.Agent.getAction(gameState)
+      return action
+
+    if self.mode == "AlphaBeta Agent":
+      if self.pastIsinEnemyRegion == False and self.currentIsinEnemyRegion == True:
+        self.Agent = AlphaBetaAgent(self.index)
+        self.Agent.registerInitialState(gameState)
+      action = self.Agent.getAction(gameState)
+      # if self.pastIsinEnemyRegion == True and self.currentIsinEnemyRegion == False:
+      #   self.mode = "initial position"
+      # else:
+      self.pastIsinEnemyRegion = self.currentIsinEnemyRegion
+      return action
+
+    if self.mode == "defensive Agent":
+      if self.pastIsinEnemyRegion == True and self.currentIsinEnemyRegion == False:
+        self.Agent = DefensiveReflexAgent(self.index)
+        self.Agent.registerInitialState(gameState)
+        action = self.Agent.getAction(gameState)
+        return action
+
+
+class myDefensiveAgent(InvadeAgent):
+
+  def chooseAction(self, gameState):
+    self.currentIsinEnemyRegion = self.amIinEnemyRegion(gameState)
+    if self.mode == "initial position":
+      if self.pastIsinEnemyRegion == True and self.currentIsinEnemyRegion == False:
+        self.Agent = AlphaBetaAgent(self.index)
+        self.Agent.registerInitialState(gameState)
+      action = self.Agent.getAction(gameState)
+      self.pastIsinEnemyRegion = self.currentIsinEnemyRegion
+
+      if not self.currentIsinEnemyRegion:
+        self.mode = "AlphaBeta Agent"
+      return action
+
+
+    if self.getFood(gameState).count() == 0:
+      self.Agent = goHomeAgent(self.index)
+      self.Agent.registerInitialState(gameState)
+      action = self.getAction(gameState)
+      return action
+
+    if self.mode == "AlphaBeta Agent":
+      if self.pastIsinEnemyRegion == False and self.currentIsinEnemyRegion == True:
+        self.Agent = AlphaBetaAgent(self.index)
+        self.Agent.registerInitialState(gameState)
+      action = self.Agent.getAction(gameState)
+      if self.pastIsinEnemyRegion == True and self.currentIsinEnemyRegion == False:
+        team = self.getTeam(gameState)
+        team.remove(self.index)
+        gameState.getAgentState()
+        self.mode = "defensive Agent"
+      else:
+        self.pastIsinEnemyRegion = self.currentIsinEnemyRegion
+      return action
+
+    if self.mode == "defensive Agent":
+      if self.pastIsinEnemyRegion == True and self.currentIsinEnemyRegion == False:
+        self.Agent = DefensiveReflexAgent(self.index)
+        self.Agent.registerInitialState(gameState)
+        action = self.Agent.getAction(gameState)
+        return action
+
+
+
+class goHomeAgent(InvadeAgent):
   def minimaxTree_node(self, gameState, k, maxDepth, parrentNode, alpha, beta):
     n = gameState.getNumAgents()
     depth = k // n + 1
 
     if gameState.isOver() or depth > maxDepth and k % n == self.index:
-      # if gameState.isWin():
-      #     print("win?? you must be kidding")
-      #     print("ghost position: ", [gameState.getGhostPosition(i) for i in range(1,4)])
-      #     print("pacman position: ", gameState.getPacmanPosition())
-      # elif gameState.isLose():
-      #     print("I am dead, of course")
-      #     print("ghost position: ", [gameState.getGhostPosition(i) for i in range(1,4)])
-      #     print("pacman position: ", gameState.getPacmanPosition())
-      # else:
-      #     print("cannot dive")
-      #print(gameState.getAgentPosition(self.index))
-      return self.evaluate(gameState)
+      return self.evaluate_invade(gameState)
 
     agentIndex = k % n
     actionList = gameState.getLegalActions(agentIndex)
@@ -237,78 +323,338 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
       for action in actionList:
         nextState = gameState.generateSuccessor(agentIndex, action)
         # print("pacman action: ", action, "pacman position: ", gameState.getPacmanPosition())
-        thisActionTreeNode = [[action], []]
+        thisActionTreeNode = [[action], [], ['pacman']]
         score = self.minimaxTree_node(nextState, k + 1, maxDepth, thisActionTreeNode, alpha, beta)
         maxscore = max(score, maxscore)
-        if maxscore > beta:
-          return maxscore
-        alpha = max(alpha, maxscore)
+        # if maxscore > beta:
+        #   return maxscore
+        # alpha = max(alpha, maxscore)
         # print("I am at:", gameState.getAgentPosition(1), "action", action)
         thisActionTreeNode[0].append(score)  # [[action, score], []]
         parrentNode[1].append(thisActionTreeNode)
       return maxscore
-    elif gameState.isRed(gameState.getAgentPosition(agentIndex)) and gameState.isOnRedTeam(agentIndex):  # ghost
-      minscore = math.inf
+    elif self.isThisGuyAGhost(gameState, agentIndex):  # ghost
+      pacman_Position = gameState.getAgentPosition(self.index)
+      ghostPositions = []
+      ghostActions = []
       for action in actionList:
         nextState = gameState.generateSuccessor(agentIndex, action)
         # print("ghost index: ", agentIndex, "ghost position: ", gameState.getGhostPosition(agentIndex))
-        thisActionTreeNode = [[action], []]
-        score = self.minimaxTree_node(nextState, k + 1, maxDepth, thisActionTreeNode, alpha, beta)
-        minscore = min(minscore, score)
-        if minscore < alpha:
-          return minscore
-        beta = min(beta, minscore)
-        thisActionTreeNode[0].append(score)  # [[action, score], []]
-        parrentNode[1].append(thisActionTreeNode)
-      return minscore
+        ghostPositions.append(nextState.getAgentPosition(agentIndex))  # [Position, Action]
+        ghostActions.append(action)
+      distList = [manhattanDistance(pacman_Position, ghost) for ghost in ghostPositions]
+      minDistance = min(distList)
+      greedyIndex = distList.index(minDistance)
+      greedyAction = ghostActions[greedyIndex]
+      nextState = gameState.generateSuccessor(agentIndex, ghostActions[greedyIndex])
+      thisActionTreeNode = [[greedyAction], [], ['ghost']]
+      score = self.minimaxTree_node(nextState, k + 1, maxDepth, thisActionTreeNode, alpha, beta)
+
+      thisActionTreeNode[0].append(score)  # [[action, score], []]
+      parrentNode[1].append(thisActionTreeNode)
+      return score
     else:
       return self.minimaxTree_node(gameState, k + 1, maxDepth, parrentNode, alpha, beta)
 
   def findPacmanPath(self, gameState, treeNode, maxDepth, k, actions):
     n = gameState.getNumAgents()
     goDeep = k // n
-    agentIndex = k % n
     if goDeep > maxDepth:
       return
     if not treeNode[1]: return
-    if agentIndex == self.index:
+    if treeNode[2][0]=='pacman':
       maxScore = - math.inf
       for i in range(len(treeNode[1])):
         if treeNode[1][i][0][1] > maxScore:
-          maxScore = treeNode[1][i][0][1]  # [1]: child node list, [i]: ith child node, [0]: child node action and score, [1]: child node score
+          maxScore = treeNode[1][i][0][
+            1]  # [1]: child node list, [i]: ith child node, [0]: child node action and score, [1]: child node score
           action = treeNode[1][i][0][0]
           index = i
       actions.append(action)
-      self.findPacmanPath(gameState, treeNode[1][index], maxDepth, k + 1, actions)
-    elif gameState.isRed(gameState.getAgentPosition(agentIndex)) and gameState.isOnRedTeam(agentIndex):
-      minScore = math.inf
-      for i in range(len(treeNode[1])):
-        if treeNode[1][i][0][1] < minScore:
-          minScore = treeNode[1][i][0][1]
-          index = i
-      self.findPacmanPath(gameState, treeNode[1][index], maxDepth, k + 1, actions)
-    else:
-      self.findPacmanPath(gameState, treeNode, maxDepth, k + 1, actions)
+    elif treeNode[2][0]=='ghost':
+
+      index = 0
+      #
+      # minScore = math.inf
+      # for i in range(len(treeNode[1])):
+      #   if treeNode[1][i][0][1] < minScore:
+      #     minScore = treeNode[1][i][0][1]
+      #     index = i
+    self.findPacmanPath(gameState, treeNode[1][index], maxDepth, k + 1, actions)
 
   def getAction(self, gameState):
     """
     Returns the minimax action using self.depth and self.evaluationFunction
     """
     "*** YOUR CODE HERE ***"
-    maxDepth = 2
-    myAgentIndex = gameState.getBlueTeamIndices()
-    n = gameState.getNumAgents()
-    tree = [["first"], []]
-    finalscore = self.minimaxTree_node(gameState, 0, maxDepth, tree, -math.inf, math.inf)
-    # print("finalscore: ", finalscore)
-    # print(maxDepth)
+    myPos = gameState.getAgentPosition(self.index)
+    ghostList = gameState.getRedTeamIndices()
+    for ghost in ghostList:
+      if gameState.isRed(gameState.getAgentPosition(ghost)) == False:
+        ghostList.remove(ghost)
+
+
+    minGhostDistance = min([self.getMazeDistance(myPos, gameState.getAgentPosition(ghost)) for ghost in ghostList])
+    if minGhostDistance > 5:
+      maxDepth = 1
+    else:
+      maxDepth = 4
+
+    ghostStates = [gameState.getAgentState(ghost) for ghost in ghostList]
+    minScareTime = min([ghost.scaredTimer for ghost in ghostStates])
+    if minScareTime > 0:
+      if minScareTime>5:
+        maxDepth = 1
+      else:
+        maxDepth = 4
+
+    invaderIndex = min(gameState.getBlueTeamIndices())
+
+    tree = [["first"], [], ['pacman']]
+    finalscore = self.minimaxTree_node(gameState, invaderIndex, maxDepth, tree, -math.inf, math.inf)
+
     actions = []
     self.findPacmanPath(gameState, tree, maxDepth, 0, actions)
-    # print("action: ", actions)
+
     return actions[0]
 
   def getWeights(self, gameState):
-    return {'successorScore': 20, 'distanceToFood': -10, 'rDistanceToGhost': -50}
+    return {'distanceToHome': 10, 'rDistanceToGhost': 50, 'getEaten': 10000, 'IamHome!!': 10000 }
+    gameState.data.layout.height
+
+  def getFeatures(self, gameState):
+
+
+    features = util.Counter()
+    borderList = []
+    wallMatrix = gameState.getWalls()
+    height = gameState.data.layout.height
+    width = gameState.data.layout.width
+
+    if not self.amIinEnemyRegion(gameState):
+      features['IamHome!!'] = 1
+    else:
+      features['IamHome!!'] = 0
+
+    for i in range(height):
+      if not wallMatrix[i][width // 2 - 1] == True:
+        borderList.append((i,width // 2 - 1))
+
+
+    myPos = gameState.getAgentState(self.index).getPosition()
+    minDistance = min([self.getMazeDistance(myPos, border) for border in borderList])
+    features['distanceToHome'] = -minDistance
+
+    opponentsList = self.getOpponents(gameState)
+    ghostList = []
+    for opponent in opponentsList:
+      if self.isThisGuyAGhost(gameState, opponent):
+        ghostList.append(opponent)
+    minGhostDistance = min([self.getMazeDistance(myPos, gameState.getAgentPosition(ghost)) for ghost in ghostList])
+    if minGhostDistance == 0:
+      features['getEaten'] = -1
+    else:
+      features['getEaten'] = 0
+    features['rDistanceToGhost'] = - 1 / minGhostDistance
+
+    # if len(gameState.getLegalActions(self.index)) == 2:
+    #   features['inPit'] = 1
+      # features['successorScore'] = self.getScore(successor)
+
+    return features
+
+  def evaluate_invade(self, gameState):
+    """
+    Computes a linear combination of features and feature weights
+    """
+
+    ############################
+    #cache the score           #
+    ############################
+    features = self.getFeatures(gameState)
+    weights = self.getWeights(gameState)
+
+    # previousObservation = self.getPreviousObservation()
+    # if previousObservation:
+    #   if previousObservation.getAgentPosition(self.index) == gameState.getAgentPosition(self.index):
+    #     print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
+    #     print(features)
+    #     print('action', action)
+    # if gameState.isRed(gameState.getAgentPosition(self.index)) and not gameState.isOnRedTeam(self.index):
+    #   print("I am Agnet:", self.index, "I am at: ", gameState.getAgentPosition(self.index), " score:", features * weights)
+    #   print(features)
+    return features * weights
+
+
+
+
+class ChooseInvadePositionAgent(InvadeAgent):
+  def getAction(self, gameState):
+    """
+    Picks among the actions with the highest Q(s,a).
+    """
+    actions = gameState.getLegalActions(self.index)
+
+    # You can profile your evaluation time by uncommenting these lines
+    # start = time.time()
+    values = [self.evaluate(gameState, a) for a in actions]
+    # print 'eval time for agent %d: %.4f' % (self.index, time.time() - start)
+
+    maxValue = max(values)
+    bestActions = [a for a, v in zip(actions, values) if v == maxValue]
+
+    foodLeft = len(self.getFood(gameState).asList())
+
+    if foodLeft <= 2:
+      bestDist = 9999
+      for action in actions:
+        successor = self.getSuccessor(gameState, action)
+        pos2 = successor.getAgentPosition(self.index)
+        dist = self.getMazeDistance(self.start,pos2)
+        if dist < bestDist:
+          bestAction = action
+          bestDist = dist
+      return bestAction
+
+    return random.choice(bestActions)
+
+
+
+  def getFeatures(self, gameState, action):
+    features = util.Counter()
+    successor = self.getSuccessor(gameState, action)
+    foodList = self.getFood(successor).asList()
+    features['successorScore'] = -len(foodList)#self.getScore(successor)
+
+    # Compute distance to the nearest food
+
+    if len(foodList) > 0: # This should always be True,  but better safe than sorry
+      myPos = successor.getAgentState(self.index).getPosition()
+      minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
+      features['distanceToFood'] = minDistance
+    return features
+
+  def getWeights(self, gameState, action):
+    return {'successorScore': 100, 'distanceToFood': -1}
+
+
+class AlphaBetaAgent(DummyAgent):
+  """
+  Your minimax agent with alpha-beta pruning (question 3)
+  """
+  def minimaxTree_node(self, gameState, k, maxDepth, parrentNode, alpha, beta):
+    n = gameState.getNumAgents()
+    depth = k // n + 1
+
+    if gameState.getAgentPosition(self.index)==gameState.getInitialAgentPosition(self.index) \
+            or gameState.isOver() \
+            or depth > maxDepth and k % n == self.index:
+      return self.evaluate_invade(gameState)
+
+    agentIndex = k % n
+    actionList = gameState.getLegalActions(agentIndex)
+
+    if agentIndex == self.index:  # pacman
+      maxscore = -math.inf
+      for action in actionList:
+        nextState = gameState.generateSuccessor(agentIndex, action)
+        # print("pacman action: ", action, "pacman position: ", gameState.getPacmanPosition())
+        thisActionTreeNode = [[action], [], ['pacman']]
+        score = self.minimaxTree_node(nextState, k + 1, maxDepth, thisActionTreeNode, alpha, beta)
+        maxscore = max(score, maxscore)
+        thisActionTreeNode[0].append(score)  # [[action, score], []]
+        parrentNode[1].append(thisActionTreeNode)
+      return maxscore
+    elif self.isThisGuyAGhost(gameState, agentIndex):  # ghost
+      pacman_Position = gameState.getAgentPosition(self.index)
+      ghostPositions = []
+      ghostActions = []
+      for action in actionList:
+        nextState = gameState.generateSuccessor(agentIndex, action)
+        ghostPositions.append(nextState.getAgentPosition(agentIndex))  # [Position, Action]
+        ghostActions.append(action)
+        # if ghostPositions == gameState.getInitialAgentPosition(agentIndex):
+        #
+
+      distList = [manhattanDistance(pacman_Position, ghost) for ghost in ghostPositions]
+
+      ## Pacman die
+
+      minDistance = min(distList)
+      greedyIndex = distList.index(minDistance)
+      greedyAction = ghostActions[greedyIndex]
+      nextState = gameState.generateSuccessor(agentIndex, ghostActions[greedyIndex])
+      thisActionTreeNode = [[greedyAction], [], ['ghost']]
+      score = self.minimaxTree_node(nextState, k + 1, maxDepth, thisActionTreeNode, alpha, beta)
+
+      thisActionTreeNode[0].append(score)  # [[action, score], []]
+      parrentNode[1].append(thisActionTreeNode)
+      return score
+    else:
+      return self.minimaxTree_node(gameState, k + 1, maxDepth, parrentNode, alpha, beta)
+
+  def findPacmanPath(self, gameState, treeNode, maxDepth, k, actions):
+    n = gameState.getNumAgents()
+    goDeep = k // n
+    if goDeep > maxDepth:
+      return
+    if not treeNode[1]: return
+    if treeNode[2][0]=='pacman':
+      maxScore = - math.inf
+      for i in range(len(treeNode[1])):
+        if treeNode[1][i][0][1] > maxScore:
+          maxScore = treeNode[1][i][0][
+            1]  # [1]: child node list, [i]: ith child node, [0]: child node action and score, [1]: child node score
+          action = treeNode[1][i][0][0]
+          index = i
+      actions.append(action)
+    elif treeNode[2][0]=='ghost':
+
+      index = 0
+      #
+      # minScore = math.inf
+      # for i in range(len(treeNode[1])):
+      #   if treeNode[1][i][0][1] < minScore:
+      #     minScore = treeNode[1][i][0][1]
+      #     index = i
+    self.findPacmanPath(gameState, treeNode[1][index], maxDepth, k + 1, actions)
+
+  def getAction(self, gameState):
+    """
+    Returns the minimax action using self.depth and self.evaluationFunction
+    """
+    "*** YOUR CODE HERE ***"
+    myPos = gameState.getAgentPosition(self.index)
+    ghostList = gameState.getRedTeamIndices()
+    for ghost in ghostList:
+      if gameState.isRed(gameState.getAgentPosition(ghost)) == False:
+        ghostList.remove(ghost)
+
+
+    minGhostDistance = min([self.getMazeDistance(myPos, gameState.getAgentPosition(ghost)) for ghost in ghostList])
+    if minGhostDistance > 5:
+      maxDepth = 1
+    else:
+      maxDepth = 4
+
+    ghostStates = [gameState.getAgentState(ghost) for ghost in ghostList]
+    minScareTime = min([ghost.scaredTimer for ghost in ghostStates])
+    if minScareTime > 0:
+      if minScareTime>5:
+        maxDepth = 1
+      else:
+        maxDepth = 4
+
+    tree = [["first"], [], ['pacman']]
+    finalscore = self.minimaxTree_node(gameState, self.index, maxDepth, tree, -math.inf, math.inf)
+
+    actions = []
+    self.findPacmanPath(gameState, tree, maxDepth, 0, actions)
+
+    return actions[0]
+
+  def getWeights(self, gameState):
+    return {'successorScore': 500, 'distanceToFood': 10, 'rDistanceToGhost': 50, 'getEaten': 10000, 'eatGhost': 10, 'getYou': 1000 }
 
   def getFeatures(self, gameState):
     features = util.Counter()
@@ -317,29 +663,58 @@ class AlphaBetaAgent(MultiAgentSearchAgent):
     if len(foodList) > 0:  # This should always be True,  but better safe than sorry
       myPos = gameState.getAgentState(self.index).getPosition()
       minDistance = min([self.getMazeDistance(myPos, food) for food in foodList])
-      features['distanceToFood'] = minDistance
+      features['distanceToFood'] = -minDistance
+    else:
+      return features
 
-    newPos = gameState.getAgentPosition(self.index)
-    newFood = gameState.getBlueFood()
-    redIndex = gameState.getRedTeamIndices()
-    blueIndex = gameState.getBlueTeamIndices()
+    # features["eatGhost"] = -100
+    # features["getYou"] = 0
+    enemyIndex = self.getOpponents(gameState)
     newGhostStates = []
-    for index in redIndex:
+    for index in enemyIndex:
       ghost = gameState.getAgentState(index)
-      if gameState.isRed(ghost.getPosition()):
-        # print(ghost)
-        newGhostStates.append(gameState.getAgentState(index))
-      newPellet = gameState.getCapsules()
-      newScaredTimes = [ghostState.scaredTimer for ghostState in newGhostStates]
-    minGhostDistance = min([self.getMazeDistance(myPos, ghost.getPosition()) for ghost in newGhostStates])
+      if self.isThisGuyAGhost(gameState, index):
 
-    features['rDistanceToGhost'] = 1 / minGhostDistance
+        #if ghost.scaredTimer == 0:
+        newGhostStates.append(gameState.getAgentState(index))
+        # else:
+        #   hahaGannaEatYou = self.getMazeDistance(ghost.getPosition(), myPos)
+        #   features["eatGhost"] = - hahaGannaEatYou
+
+      # if ghost.getPosition() == gameState.getInitialAgentPosition(index):
+      #   features["getYou"] = 1
+
+    if len(newGhostStates) > 0:
+      minGhostDistance = min([self.getMazeDistance(myPos, ghost.getPosition()) for ghost in newGhostStates])
+    else:
+      minGhostDistance = -1
+    if gameState.getAgentPosition(self.index)==gameState.getInitialAgentPosition(self.index):
+      features['getEaten'] = -1
+    else:
+      features['getEaten'] = 0
+
+
+
+    features['rDistanceToGhost'] = - 1 / minGhostDistance
 
     # if len(gameState.getLegalActions(self.index)) == 2:
     #   features['inPit'] = 1
       # features['successorScore'] = self.getScore(successor)
 
     return features
+
+  def evaluate_invade(self, gameState):
+    """
+    Computes a linear combination of features and feature weights
+    """
+
+    ############################
+    #cache the score           #
+    ############################
+    features = self.getFeatures(gameState)
+    weights = self.getWeights(gameState)
+    return features * weights
+
 
 class OffensiveReflexAgent(DummyAgent):
   """
@@ -381,6 +756,7 @@ class OffensiveReflexAgent(DummyAgent):
 
   def getWeights(self, gameState, action):
     return {'successorScore': 100, 'distanceToFood': -1, 'rDistanceToGhost': -100, 'inPit': -10000}
+
 
 class DefensiveReflexAgent(DummyAgent):
   """
